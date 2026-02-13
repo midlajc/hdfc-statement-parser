@@ -491,6 +491,7 @@ async function waitForServiceWorkerControl(timeoutMs = 5000) {
 async function importSharedFilesIfAny() {
   const url = new URL(window.location.href);
   const sharedState = url.searchParams.get("shared");
+  let importedCount = 0;
 
   if (!sharedState) {
     return;
@@ -542,6 +543,7 @@ async function importSharedFilesIfAny() {
 
     if (sharedFiles.length) {
       acceptFiles(sharedFiles);
+      importedCount = sharedFiles.length;
       setSharedStatus(
         `Imported ${sharedFiles.length} PDF${sharedFiles.length === 1 ? "" : "s"} from share target.`,
       );
@@ -549,13 +551,22 @@ async function importSharedFilesIfAny() {
       setSharedStatus("No valid PDF was found in shared data.", true);
     }
 
-    if (pending.id) {
-      await fetch(`/shared-files/consume?id=${encodeURIComponent(pending.id)}`, { cache: "no-store" });
-    } else {
-      await fetch("/shared-files/consume", { cache: "no-store" });
+    // Cleanup should not flip the UI into an import-failure state.
+    try {
+      if (pending.id) {
+        await fetch(`/shared-files/consume?id=${encodeURIComponent(pending.id)}`, {
+          cache: "no-store",
+        });
+      } else {
+        await fetch("/shared-files/consume", { cache: "no-store" });
+      }
+    } catch (consumeErr) {
+      console.warn("Shared cleanup failed:", consumeErr);
     }
   } catch (err) {
-    setSharedStatus("Could not import shared PDF. You can still upload manually.", true);
+    if (!importedCount) {
+      setSharedStatus("Could not import shared PDF. You can still upload manually.", true);
+    }
     console.error("Shared import failed:", err);
   } finally {
     clearSharedUrlParams();
