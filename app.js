@@ -7,6 +7,7 @@ const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("file-input");
 const fileList = document.getElementById("file-list");
 const tileTemplate = document.getElementById("file-tile-template");
+const sharedStatus = document.getElementById("shared-status");
 
 const DATE_TIME_RE = /^\s*(\d{2}\/\d{2}\/\d{4})\s*\|\s*(\d{2}:\d{2})\s*(.*)$/;
 const DATE_RE = /(\d{2}\/\d{2}\/\d{4})/;
@@ -437,6 +438,132 @@ function acceptFiles(fileListLike) {
     createTile(file);
   });
 }
+
+function setSharedStatus(message, isError = false) {
+  if (!sharedStatus) return;
+  if (!message) {
+    sharedStatus.textContent = "";
+    sharedStatus.hidden = true;
+    sharedStatus.classList.remove("is-error");
+    return;
+  }
+
+  sharedStatus.textContent = message;
+  sharedStatus.hidden = false;
+  sharedStatus.classList.toggle("is-error", isError);
+}
+
+function clearSharedUrlParams() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("shared");
+  window.history.replaceState({}, "", url);
+}
+
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+
+  try {
+    await navigator.serviceWorker.register("/service-worker.js");
+  } catch (err) {
+    console.error("Service worker registration failed:", err);
+  }
+}
+
+async function waitForServiceWorkerControl(timeoutMs = 5000) {
+  if (navigator.serviceWorker.controller) {
+    return;
+  }
+
+  await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Timed out waiting for service worker")), timeoutMs);
+    }),
+  ]);
+
+  if (!navigator.serviceWorker.controller) {
+    throw new Error("Current page is not controlled by service worker");
+  }
+}
+
+async function importSharedFilesIfAny() {
+  const url = new URL(window.location.href);
+  const sharedState = url.searchParams.get("shared");
+
+  if (!sharedState) {
+    return;
+  }
+
+  if (sharedState === "empty") {
+    setSharedStatus("Share target did not include a PDF file.", true);
+    clearSharedUrlParams();
+    return;
+  }
+
+  if (!("serviceWorker" in navigator)) {
+    setSharedStatus("Shared import needs service worker support.", true);
+    clearSharedUrlParams();
+    return;
+  }
+
+  try {
+    await waitForServiceWorkerControl();
+    const pendingResponse = await fetch("/shared-files/pending", { cache: "no-store" });
+
+    if (pendingResponse.status === 204) {
+      setSharedStatus("No shared PDF is pending. Upload a file manually.");
+      clearSharedUrlParams();
+      return;
+    }
+
+    if (!pendingResponse.ok) {
+      throw new Error(`Pending request failed with status ${pendingResponse.status}`);
+    }
+
+    const pending = await pendingResponse.json();
+    const sharedFiles = [];
+
+    for (const meta of pending.files || []) {
+      if (!meta?.url) continue;
+
+      const fileResponse = await fetch(meta.url, { cache: "no-store" });
+      if (!fileResponse.ok) continue;
+
+      const blob = await fileResponse.blob();
+      sharedFiles.push(
+        new File([blob], meta.name || "statement.pdf", {
+          type: meta.type || blob.type || "application/pdf",
+          lastModified: Date.now(),
+        }),
+      );
+    }
+
+    if (sharedFiles.length) {
+      acceptFiles(sharedFiles);
+      setSharedStatus(
+        `Imported ${sharedFiles.length} PDF${sharedFiles.length === 1 ? "" : "s"} from share target.`,
+      );
+    } else {
+      setSharedStatus("No valid PDF was found in shared data.", true);
+    }
+
+    if (pending.id) {
+      await fetch(`/shared-files/consume?id=${encodeURIComponent(pending.id)}`, { cache: "no-store" });
+    } else {
+      await fetch("/shared-files/consume", { cache: "no-store" });
+    }
+  } catch (err) {
+    setSharedStatus("Could not import shared PDF. You can still upload manually.", true);
+    console.error("Shared import failed:", err);
+  } finally {
+    clearSharedUrlParams();
+  }
+}
+
+registerServiceWorker();
+importSharedFilesIfAny();
 
 fileInput.addEventListener("change", (event) => {
   acceptFiles(event.target.files);
