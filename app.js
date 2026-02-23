@@ -8,12 +8,15 @@ const fileInput = document.getElementById("file-input");
 const fileList = document.getElementById("file-list");
 const tileTemplate = document.getElementById("file-tile-template");
 const sharedStatus = document.getElementById("shared-status");
+const installPwaBtn = document.getElementById("install-pwa-btn");
+const installPwaHint = document.getElementById("install-pwa-hint");
 
 const DATE_TIME_RE = /^\s*(\d{2}\/\d{2}\/\d{4})\s*\|\s*(\d{2}:\d{2})\s*(.*)$/;
 const DATE_RE = /(\d{2}\/\d{2}\/\d{4})/;
 const TIME_RE = /(\d{2}:\d{2})/;
 const FOREX_RE = /\b(?<currency>[A-Z]{3})\b\s+(?<amount>[\d,]+(?:\.\d{1,2})?)\s*$/;
 const PAGE_SIZE = 20;
+let deferredInstallPrompt = null;
 
 function isPdfFile(file) {
   if (!file) return false;
@@ -469,6 +472,107 @@ function clearSharedUrlParams() {
   window.history.replaceState({}, "", url);
 }
 
+function isRunningStandalone() {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.matchMedia("(display-mode: fullscreen)").matches ||
+    window.navigator.standalone === true
+  );
+}
+
+function setInstallHint(message = "") {
+  if (!installPwaHint) return;
+  if (!message) {
+    installPwaHint.textContent = "";
+    installPwaHint.hidden = true;
+    return;
+  }
+
+  installPwaHint.textContent = message;
+  installPwaHint.hidden = false;
+}
+
+function isIosDevice() {
+  const ua = navigator.userAgent || "";
+  return /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isIosSafari() {
+  const ua = navigator.userAgent || "";
+  const isSafari = /safari/i.test(ua) && !/crios|fxios|edgios|opr\//i.test(ua);
+  return isIosDevice() && isSafari;
+}
+
+function setupPwaInstallPrompt() {
+  if (!installPwaBtn && !installPwaHint) return;
+
+  if (isRunningStandalone()) {
+    if (installPwaBtn) {
+      installPwaBtn.hidden = true;
+    }
+    setInstallHint("");
+    return;
+  }
+
+  if (installPwaBtn) {
+    installPwaBtn.hidden = true;
+    installPwaBtn.disabled = true;
+  }
+
+  if (isIosDevice()) {
+    if (isIosSafari()) {
+      setInstallHint("On iPhone/iPad, tap Share, then Add to Home Screen.");
+    } else {
+      setInstallHint("To install on iPhone/iPad, open this page in Safari, then tap Share and Add to Home Screen.");
+    }
+  } else {
+    setInstallHint("");
+  }
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    if (installPwaBtn) {
+      installPwaBtn.hidden = false;
+      installPwaBtn.disabled = false;
+    }
+    setInstallHint("");
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    if (installPwaBtn) {
+      installPwaBtn.hidden = true;
+    }
+    setInstallHint("");
+    setSharedStatus("App installed successfully.");
+  });
+
+  if (!installPwaBtn) return;
+
+  installPwaBtn.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+
+    installPwaBtn.disabled = true;
+    try {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+
+      if (choice?.outcome === "accepted") {
+        deferredInstallPrompt = null;
+        installPwaBtn.hidden = true;
+        setSharedStatus("Install prompt accepted. Finishing setup...");
+        return;
+      }
+
+      installPwaBtn.disabled = false;
+    } catch (err) {
+      installPwaBtn.disabled = false;
+      console.error("Install prompt failed:", err);
+    }
+  });
+}
+
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) {
     return;
@@ -623,6 +727,7 @@ async function importSharedFilesIfAny() {
 
 registerServiceWorker();
 registerFileLaunchConsumer();
+setupPwaInstallPrompt();
 importSharedFilesIfAny();
 
 fileInput.addEventListener("change", (event) => {
