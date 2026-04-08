@@ -4,9 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0f172a" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <title>HDFC Statement Parser</title>
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Statement Tools</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -20,72 +19,97 @@
   </head>
   <body>
     <main class="page">
-      <section class="hero">
-        <h1>HDFC Credit Card Statement Parser</h1>
-        <p class="lede">
-          Drop your statement PDF to instantly generate a CSV.
-        </p>
-        <div class="hero-actions">
-          <button id="install-pwa-btn" class="cta" type="button" hidden>Install App</button>
+      <!-- Home view: tool selection -->
+      <section id="home-view" class="home-view">
+        <div class="hero">
+          <h1>Statement Tools</h1>
+          <p class="lede">
+            A collection of browser-based tools to parse bank and card statements into CSV.
+          </p>
         </div>
-        <p id="install-pwa-hint" class="install-hint" hidden></p>
-        <p id="shared-status" class="share-status" hidden></p>
+        <div id="tool-grid" class="tool-grid"></div>
+        <p class="footnote">* All processing happens locally. Your files never leave the browser.</p>
       </section>
 
-      <section class="card">
-        <div
-          id="dropzone"
-          class="dropzone"
-          role="button"
-          tabindex="0"
-          aria-label="Upload statement PDF"
-        >
-          <input id="file-input" type="file" accept="application/pdf" multiple />
-          <div class="dropzone-content">
-            <div class="dropzone-icon">PDF</div>
-            <div>
-              <p class="dropzone-title">Drop your PDF here</p>
-              <p class="dropzone-subtitle">or click to choose files</p>
-            </div>
-          </div>
+      <!-- Tool view: parser workspace -->
+      <section id="tool-view" class="tool-view" hidden>
+        <div class="tool-nav">
+          <button id="back-btn" class="ghost back-btn" type="button">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg> All Tools
+          </button>
         </div>
-        <div id="file-list" class="file-list"></div>
+        <div class="hero">
+          <h1 id="tool-title"></h1>
+          <p id="tool-description" class="lede"></p>
+          <p id="shared-status" class="share-status" hidden></p>
+        </div>
 
-        <template id="file-tile-template">
-          <div class="file-tile">
-            <div class="file-header">
-              <div class="file-meta">
-                <p class="file-name"></p>
-                <p class="file-status"></p>
-              </div>
-              <button class="ghost file-remove" type="button">Remove</button>
-            </div>
-
-            <div class="file-actions">
-              <a class="cta download-link" href="#" download hidden>Download CSV</a>
-              <button class="ghost preview-pdf-btn" type="button" hidden>Preview PDF</button>
-              <button class="ghost preview-csv-btn" type="button" hidden>Preview CSV</button>
-              <div class="password-inline" hidden>
-                <label>PDF password</label>
-                <input type="password" placeholder="Enter password" />
-                <button class="cta password-submit" type="button">Unlock</button>
-              </div>
-            </div>
-            <div class="preview-panel" hidden>
-              <div class="preview-header">
-                <p class="preview-title">Preview</p>
-                <button class="ghost preview-close" type="button">Close</button>
-              </div>
-              <div class="preview-body">
-                <div class="preview-pdf-view" hidden></div>
-                <div class="preview-csv-view" hidden></div>
+        <section class="card">
+          <div
+            id="dropzone"
+            class="dropzone"
+            role="button"
+            tabindex="0"
+            aria-label="Upload file"
+          >
+            <input id="file-input" type="file" multiple />
+            <div class="dropzone-content">
+              <div class="dropzone-icon">PDF</div>
+              <div>
+                <p class="dropzone-title">Drop your file here</p>
+                <p class="dropzone-subtitle">or click to choose files</p>
               </div>
             </div>
           </div>
-        </template>
+          <div id="file-list" class="file-list"></div>
+
+          <template id="file-tile-template">
+            <div class="file-tile">
+              <div class="file-header">
+                <div class="file-meta">
+                  <p class="file-name"></p>
+                  <p class="file-status"></p>
+                </div>
+                <button class="ghost file-remove" type="button">Remove</button>
+              </div>
+
+              <div class="file-actions">
+                <a class="cta download-link" href="#" download hidden>Download CSV</a>
+                <button class="ghost preview-pdf-btn" type="button" hidden>Preview PDF</button>
+                <button class="ghost preview-csv-btn" type="button" hidden>Preview CSV</button>
+                <div class="password-inline" hidden>
+                  <label>PDF password</label>
+                  <input type="password" placeholder="Enter password" />
+                  <button class="cta password-submit" type="button">Unlock</button>
+                </div>
+              </div>
+              <div class="preview-panel" hidden>
+                <div class="preview-header">
+                  <p class="preview-title">Preview</p>
+                  <button class="ghost preview-close" type="button">Close</button>
+                </div>
+                <div class="preview-body">
+                  <div class="preview-pdf-view" hidden></div>
+                  <div class="preview-csv-view" hidden></div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </section>
+        <p class="footnote">* All processing happens locally. Your files never leave the browser.</p>
       </section>
-      <p class="footnote">* All processing happens locally. Your statement never leaves the browser.</p>
     </main>
+
+    <template id="tool-card-template">
+      <button class="tool-card" type="button">
+        <span class="tool-card-icon"></span>
+        <div class="tool-card-body">
+          <p class="tool-card-name"></p>
+          <p class="tool-card-description"></p>
+        </div>
+        <svg class="tool-card-arrow" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+    </template>
 
     <script type="module" src="app.js"></script>
   </body>

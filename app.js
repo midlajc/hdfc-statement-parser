@@ -1,230 +1,108 @@
-import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
+import hdfcCreditCard from "./parsers/hdfc-credit-card.js";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+/* ── Tool registry ── */
 
+const tools = [hdfcCreditCard];
+
+let activeTool = null;
+
+/* ── DOM refs ── */
+
+const homeView = document.getElementById("home-view");
+const toolView = document.getElementById("tool-view");
+const toolGrid = document.getElementById("tool-grid");
+const toolCardTemplate = document.getElementById("tool-card-template");
+const backBtn = document.getElementById("back-btn");
+const toolTitle = document.getElementById("tool-title");
+const toolDescription = document.getElementById("tool-description");
 const dropzone = document.getElementById("dropzone");
+const dropzoneIcon = dropzone.querySelector(".dropzone-icon");
+const dropzoneTitle = dropzone.querySelector(".dropzone-title");
+const dropzoneSubtitle = dropzone.querySelector(".dropzone-subtitle");
 const fileInput = document.getElementById("file-input");
 const fileList = document.getElementById("file-list");
 const tileTemplate = document.getElementById("file-tile-template");
 const sharedStatus = document.getElementById("shared-status");
-const installPwaBtn = document.getElementById("install-pwa-btn");
-const installPwaHint = document.getElementById("install-pwa-hint");
 
-const DATE_TIME_RE = /^\s*(\d{2}\/\d{2}\/\d{4})\s*\|\s*(\d{2}:\d{2})\s*(.*)$/;
-const DATE_RE = /(\d{2}\/\d{2}\/\d{4})/;
-const TIME_RE = /(\d{2}:\d{2})/;
-const FOREX_RE = /\b(?<currency>[A-Z]{3})\b\s+(?<amount>[\d,]+(?:\.\d{1,2})?)\s*$/;
 const PAGE_SIZE = 20;
-let deferredInstallPrompt = null;
 
-function isPdfFile(file) {
-  if (!file) return false;
-  const mimeType = (file.type || "").toLowerCase();
-  const name = (file.name || "").toLowerCase();
-  return mimeType === "application/pdf" || name.endsWith(".pdf");
+/* ── Navigation ── */
+
+function showHome() {
+  activeTool = null;
+  toolView.hidden = true;
+  homeView.hidden = false;
+  fileList.innerHTML = "";
+  document.title = "Statement Tools";
+  window.history.pushState(null, "", "/");
 }
 
-function cleanAmount(str) {
-  if (!str) return null;
-  const match = str.match(/([\d,]+(?:\.\d{1,2})?)/);
-  if (!match) return null;
-  return Number(match[1].replace(/,/g, ""));
+function showTool(tool) {
+  activeTool = tool;
+  homeView.hidden = true;
+  toolView.hidden = false;
+  fileList.innerHTML = "";
+  toolTitle.textContent = tool.name;
+  toolDescription.textContent = tool.description;
+  fileInput.setAttribute("accept", tool.accept);
+
+  // Update dropzone text based on tool
+  const isExcel = tool.accept.includes(".xls");
+  dropzoneIcon.textContent = isExcel ? "XLS" : "PDF";
+  dropzoneTitle.textContent = `Drop your ${tool.fileLabel} here`;
+  dropzoneSubtitle.textContent = "or click to choose files";
+
+  document.title = `${tool.name} — Statement Tools`;
+  window.history.pushState(null, "", `#${tool.id}`);
 }
 
-function parseNewLine(rawLine) {
-  if (!rawLine.trim()) return [];
+backBtn.addEventListener("click", showHome);
 
-  let datePart;
-  let timePart;
-  let rest;
-  const m = rawLine.match(DATE_TIME_RE);
-  if (m) {
-    [, datePart, timePart, rest] = m;
-  } else {
-    const dm = rawLine.match(DATE_RE);
-    if (!dm) return [];
-    datePart = dm[1];
-    rest = rawLine.slice(dm.index + dm[0].length).trim();
-    const tm = rawLine.match(TIME_RE);
-    timePart = tm ? tm[1] : "";
-  }
-
-  let txnType = "Dr";
-  let amountStr = "";
-  let splitIndex = rest.lastIndexOf("+ C");
-  if (splitIndex !== -1) {
-    txnType = "Cr";
-    amountStr = rest.slice(splitIndex + 3).trim();
-    rest = rest.slice(0, splitIndex).trim();
-  } else {
-    splitIndex = rest.lastIndexOf(" C");
-    if (splitIndex !== -1) {
-      amountStr = rest.slice(splitIndex + 2).trim();
-      rest = rest.slice(0, splitIndex).trim();
+window.addEventListener("popstate", () => {
+  const hash = window.location.hash.slice(1);
+  if (hash) {
+    const tool = tools.find((t) => t.id === hash);
+    if (tool) {
+      showTool(tool);
+      return;
     }
   }
+  showHome();
+});
 
-  const amount = cleanAmount(amountStr);
-  let forexCurrency = "INR";
-  let forexAmount = null;
-  let description = rest;
+/* ── Build tool cards ── */
 
-  const forexMatch = rest.match(FOREX_RE);
-  if (forexMatch && forexMatch.groups) {
-    forexCurrency = forexMatch.groups.currency;
-    forexAmount = cleanAmount(forexMatch.groups.amount);
-    description = rest.replace(FOREX_RE, "").trim();
+function renderToolGrid() {
+  toolGrid.innerHTML = "";
+  for (const tool of tools) {
+    const node = toolCardTemplate.content.firstElementChild.cloneNode(true);
+    node.querySelector(".tool-card-icon").textContent = tool.icon;
+    node.querySelector(".tool-card-name").textContent = tool.name;
+    node.querySelector(".tool-card-description").textContent = tool.description;
+    node.addEventListener("click", () => showTool(tool));
+    toolGrid.appendChild(node);
   }
-
-  let forexRate = "";
-  if (forexAmount && amount) {
-    const computed = amount / forexAmount;
-    if (Number.isFinite(computed)) {
-      forexRate = computed.toFixed(4);
-    }
-  }
-
-  return [
-    {
-      date: datePart,
-      time: timePart || "",
-      description,
-      amount: amount ?? "",
-      currency: forexCurrency,
-      forex_amount: forexAmount ?? "",
-      forex_rate: forexRate,
-      type: txnType,
-    },
-  ];
 }
 
-function parseOldLine(rawLine, section) {
-  if (!rawLine.trim()) return [];
-  const dm = rawLine.match(/^\s*(\d{2}\/\d{2}\/\d{4})\s+(.*)$/);
-  if (!dm) return [];
+renderToolGrid();
 
-  const datePart = dm[1];
-  let rest = dm[2].trim();
+/* ── Shared helpers ── */
 
-  const amountMatch = rest.match(/([\d,]+(?:\.\d{1,2})?)\s*(Cr)?\s*$/i);
-  if (!amountMatch) return [];
-
-  const amountStr = amountMatch[1];
-  const txnType = amountMatch[2] ? "Cr" : "Dr";
-  rest = rest.slice(0, amountMatch.index).trim();
-
-  let currency = "INR";
-  let forexAmount = "";
-  let forexRate = "";
-  let description = rest;
-
-  if (section === "international") {
-    const forexMatch = rest.match(FOREX_RE);
-    if (forexMatch && forexMatch.groups) {
-      currency = forexMatch.groups.currency;
-      forexAmount = cleanAmount(forexMatch.groups.amount) ?? "";
-      description = rest.replace(FOREX_RE, "").trim();
-      const amount = cleanAmount(amountStr);
-      if (amount && forexAmount) {
-        forexRate = (amount / forexAmount).toFixed(2);
-      }
-    }
-  }
-
-  return [
-    {
-      date: datePart,
-      time: "",
-      description,
-      amount: cleanAmount(amountStr) ?? "",
-      currency,
-      forex_amount: forexAmount,
-      forex_rate: forexRate,
-      type: txnType,
-    },
-  ];
-}
-
-function rowsToCsv(rows, format) {
-  const cols =
-    format === "new"
-      ? ["date", "time", "currency", "description", "forex_amount", "forex_rate", "amount", "type"]
-      : ["date", "currency", "description", "forex_amount", "forex_rate", "amount", "type"];
-
+function rowsToCsv(rows, columns) {
   const escapeCell = (value) => {
     const cell = value === null || value === undefined ? "" : String(value);
     return `"${cell.replace(/"/g, '""')}"`;
   };
 
-  const lines = [cols.map(escapeCell).join(",")];
+  const lines = [columns.map(escapeCell).join(",")];
   for (const row of rows) {
-    lines.push(cols.map((col) => escapeCell(row[col] ?? "")).join(","));
+    lines.push(columns.map((col) => escapeCell(row[col] ?? "")).join(","));
   }
   return lines.join("\n");
 }
 
-function getColumnsForFormat(format) {
-  return format === "new"
-    ? ["date", "time", "currency", "description", "forex_amount", "forex_rate", "amount", "type"]
-    : ["date", "currency", "description", "forex_amount", "forex_rate", "amount", "type"];
-}
-
-async function extractLinesFromPdf(file, password) {
-  const data = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data, password: password || undefined });
-  const pdf = await loadingTask.promise;
-
-  const allLines = [];
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
-    const page = await pdf.getPage(pageNum);
-    const textContent = await page.getTextContent();
-
-    let buffer = "";
-    for (const item of textContent.items) {
-      buffer += item.str;
-      if (item.hasEOL) {
-        allLines.push(buffer.trim());
-        buffer = "";
-      } else {
-        buffer += " ";
-      }
-    }
-    if (buffer.trim()) {
-      allLines.push(buffer.trim());
-    }
-  }
-
-  return allLines;
-}
-
-async function parseWithFormat(lines, format) {
-  const rows = [];
-  if (format === "new") {
-    for (const line of lines) {
-      rows.push(...parseNewLine(line));
-    }
-  } else {
-    let section = "";
-    for (const line of lines) {
-      if (/Domestic Transactions/i.test(line)) {
-        section = "domestic";
-        continue;
-      }
-      if (/International Transactions/i.test(line)) {
-        section = "international";
-        continue;
-      }
-      if (!section) continue;
-      rows.push(...parseOldLine(line, section));
-    }
-  }
-  return rows;
-}
-
-function renderCsvPreview(container, rows, format) {
+function renderCsvTable(container, rows, columns) {
   container.innerHTML = "";
-  const cols = getColumnsForFormat(format);
   const tableScroll = document.createElement("div");
   tableScroll.className = "csv-table-scroll";
   const table = document.createElement("table");
@@ -232,7 +110,7 @@ function renderCsvPreview(container, rows, format) {
 
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  cols.forEach((col) => {
+  columns.forEach((col) => {
     const th = document.createElement("th");
     th.textContent = col;
     headRow.appendChild(th);
@@ -243,7 +121,7 @@ function renderCsvPreview(container, rows, format) {
   const tbody = document.createElement("tbody");
   rows.forEach((row) => {
     const tr = document.createElement("tr");
-    cols.forEach((col) => {
+    columns.forEach((col) => {
       const td = document.createElement("td");
       td.textContent = row[col] ?? "";
       tr.appendChild(td);
@@ -255,7 +133,12 @@ function renderCsvPreview(container, rows, format) {
   container.appendChild(tableScroll);
 }
 
+/* ── File tile ── */
+
 function createTile(file) {
+  const tool = activeTool;
+  if (!tool) return;
+
   const node = tileTemplate.content.firstElementChild.cloneNode(true);
   const nameEl = node.querySelector(".file-name");
   const statusEl = node.querySelector(".file-status");
@@ -271,10 +154,14 @@ function createTile(file) {
   const previewPdf = node.querySelector(".preview-pdf-view");
   const previewCsv = node.querySelector(".preview-csv-view");
 
+  // Rename preview button for non-PDF tools
+  const isPdf = tool.accept.includes("pdf");
+  previewPdfBtn.textContent = isPdf ? "Preview PDF" : "Preview File";
+
   let csvUrl = null;
-  let pdfUrl = null;
+  let fileUrl = null;
   let parsedRows = null;
-  let parsedFormat = null;
+  let parsedColumns = null;
   let currentPage = 1;
 
   const setStatus = (message) => {
@@ -286,9 +173,9 @@ function createTile(file) {
       URL.revokeObjectURL(csvUrl);
       csvUrl = null;
     }
-    if (pdfUrl) {
-      URL.revokeObjectURL(pdfUrl);
-      pdfUrl = null;
+    if (fileUrl) {
+      URL.revokeObjectURL(fileUrl);
+      fileUrl = null;
     }
     node.remove();
   };
@@ -303,16 +190,23 @@ function createTile(file) {
     previewCsv.hidden = true;
   };
 
-  const renderPdfPreview = () => {
+  const renderFilePreview = () => {
     previewPdf.innerHTML = "";
-    const iframe = document.createElement("iframe");
-    iframe.src = pdfUrl;
-    previewPdf.appendChild(iframe);
+    if (isPdf) {
+      const iframe = document.createElement("iframe");
+      iframe.src = fileUrl;
+      previewPdf.appendChild(iframe);
+    } else {
+      const msg = document.createElement("p");
+      msg.className = "csv-note";
+      msg.textContent = "File preview is not available for this format. Use CSV preview instead.";
+      previewPdf.appendChild(msg);
+    }
   };
 
   const renderCsvPreviewIfReady = () => {
     previewCsv.innerHTML = "";
-    if (!parsedRows || !parsedFormat) {
+    if (!parsedRows || !parsedColumns) {
       const msg = document.createElement("p");
       msg.className = "csv-note";
       msg.textContent = "Parse the statement to preview CSV.";
@@ -325,7 +219,7 @@ function createTile(file) {
     const end = Math.min(start + PAGE_SIZE, parsedRows.length);
     const previewRows = parsedRows.slice(start, end);
 
-    renderCsvPreview(previewCsv, previewRows, parsedFormat);
+    renderCsvTable(previewCsv, previewRows, parsedColumns);
 
     const pagination = document.createElement("div");
     pagination.className = "csv-pagination";
@@ -372,21 +266,16 @@ function createTile(file) {
     setStatus("Parsing...");
 
     try {
-      const lines = await extractLinesFromPdf(file, passwordInput.value.trim());
-      let rows = await parseWithFormat(lines, "old");
-      let parserUsed = "old";
+      const password = tool.needsPassword ? passwordInput.value.trim() : undefined;
+      const { rows, format } = await tool.parseFile(file, password);
 
       if (!rows.length) {
-        rows = await parseWithFormat(lines, "new");
-        parserUsed = "new";
-      }
-
-      if (!rows.length) {
-        setStatus("No transactions detected. The statement may use a different layout.");
+        setStatus("No transactions detected. The file may use a different layout.");
         return;
       }
 
-      const csv = rowsToCsv(rows, parserUsed);
+      const columns = tool.getColumns(format);
+      const csv = rowsToCsv(rows, columns);
       const blob = new Blob([csv], { type: "text/csv" });
 
       if (csvUrl) {
@@ -395,15 +284,15 @@ function createTile(file) {
       csvUrl = URL.createObjectURL(blob);
 
       downloadLink.href = csvUrl;
-      downloadLink.download = file.name.replace(/\.pdf$/i, "") + ".csv";
+      downloadLink.download = file.name.replace(/\.[^.]+$/, "") + ".csv";
       downloadLink.hidden = false;
 
       parsedRows = rows;
-      parsedFormat = parserUsed;
+      parsedColumns = columns;
       currentPage = 1;
-      previewPdfBtn.hidden = false;
+      previewPdfBtn.hidden = !isPdf;
       previewCsvBtn.hidden = false;
-      setStatus(`Parsed ${rows.length} transactions using ${parserUsed.toUpperCase()} parser.`);
+      setStatus(`Parsed ${rows.length} transactions.`);
     } catch (err) {
       if (err?.name === "PasswordException") {
         passwordBox.hidden = false;
@@ -411,14 +300,14 @@ function createTile(file) {
         previewCsvBtn.hidden = true;
         setStatus("Password required to open this PDF.");
       } else {
-        setStatus(`Failed to parse PDF: ${err.message || err}`);
+        setStatus(`Failed to parse: ${err.message || err}`);
       }
     }
   };
 
   nameEl.textContent = file.name;
   setStatus("Parsing...");
-  pdfUrl = URL.createObjectURL(file);
+  fileUrl = URL.createObjectURL(file);
 
   removeBtn.addEventListener("click", cleanup);
   passwordSubmit.addEventListener("click", runParse);
@@ -428,7 +317,7 @@ function createTile(file) {
     showPreviewPanel();
     previewCsv.hidden = true;
     previewPdf.hidden = false;
-    renderPdfPreview();
+    renderFilePreview();
   });
 
   previewCsvBtn.addEventListener("click", () => {
@@ -443,14 +332,16 @@ function createTile(file) {
 }
 
 function acceptFiles(fileListLike) {
+  const tool = activeTool;
+  if (!tool) return;
   const files = Array.from(fileListLike);
   files.forEach((file) => {
-    if (!isPdfFile(file)) {
-      return;
-    }
+    if (!tool.isValidFile(file)) return;
     createTile(file);
   });
 }
+
+/* ── Shared status helpers ── */
 
 function setSharedStatus(message, isError = false) {
   if (!sharedStatus) return;
@@ -460,7 +351,6 @@ function setSharedStatus(message, isError = false) {
     sharedStatus.classList.remove("is-error");
     return;
   }
-
   sharedStatus.textContent = message;
   sharedStatus.hidden = false;
   sharedStatus.classList.toggle("is-error", isError);
@@ -472,112 +362,10 @@ function clearSharedUrlParams() {
   window.history.replaceState({}, "", url);
 }
 
-function isRunningStandalone() {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    window.matchMedia("(display-mode: fullscreen)").matches ||
-    window.navigator.standalone === true
-  );
-}
-
-function setInstallHint(message = "") {
-  if (!installPwaHint) return;
-  if (!message) {
-    installPwaHint.textContent = "";
-    installPwaHint.hidden = true;
-    return;
-  }
-
-  installPwaHint.textContent = message;
-  installPwaHint.hidden = false;
-}
-
-function isIosDevice() {
-  const ua = navigator.userAgent || "";
-  return /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-}
-
-function isIosSafari() {
-  const ua = navigator.userAgent || "";
-  const isSafari = /safari/i.test(ua) && !/crios|fxios|edgios|opr\//i.test(ua);
-  return isIosDevice() && isSafari;
-}
-
-function setupPwaInstallPrompt() {
-  if (!installPwaBtn && !installPwaHint) return;
-
-  if (isRunningStandalone()) {
-    if (installPwaBtn) {
-      installPwaBtn.hidden = true;
-    }
-    setInstallHint("");
-    return;
-  }
-
-  if (installPwaBtn) {
-    installPwaBtn.hidden = true;
-    installPwaBtn.disabled = true;
-  }
-
-  if (isIosDevice()) {
-    if (isIosSafari()) {
-      setInstallHint("On iPhone/iPad, tap Share, then Add to Home Screen.");
-    } else {
-      setInstallHint("To install on iPhone/iPad, open this page in Safari, then tap Share and Add to Home Screen.");
-    }
-  } else {
-    setInstallHint("");
-  }
-
-  window.addEventListener("beforeinstallprompt", (event) => {
-    event.preventDefault();
-    deferredInstallPrompt = event;
-    if (installPwaBtn) {
-      installPwaBtn.hidden = false;
-      installPwaBtn.disabled = false;
-    }
-    setInstallHint("");
-  });
-
-  window.addEventListener("appinstalled", () => {
-    deferredInstallPrompt = null;
-    if (installPwaBtn) {
-      installPwaBtn.hidden = true;
-    }
-    setInstallHint("");
-    setSharedStatus("App installed successfully.");
-  });
-
-  if (!installPwaBtn) return;
-
-  installPwaBtn.addEventListener("click", async () => {
-    if (!deferredInstallPrompt) return;
-
-    installPwaBtn.disabled = true;
-    try {
-      deferredInstallPrompt.prompt();
-      const choice = await deferredInstallPrompt.userChoice;
-
-      if (choice?.outcome === "accepted") {
-        deferredInstallPrompt = null;
-        installPwaBtn.hidden = true;
-        setSharedStatus("Install prompt accepted. Finishing setup...");
-        return;
-      }
-
-      installPwaBtn.disabled = false;
-    } catch (err) {
-      installPwaBtn.disabled = false;
-      console.error("Install prompt failed:", err);
-    }
-  });
-}
+/* ── PWA / Service worker ── */
 
 async function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) {
-    return;
-  }
-
+  if (!("serviceWorker" in navigator)) return;
   try {
     await navigator.serviceWorker.register("/service-worker.js");
   } catch (err) {
@@ -586,35 +374,27 @@ async function registerServiceWorker() {
 }
 
 function registerFileLaunchConsumer() {
-  if (!("launchQueue" in window) || typeof window.launchQueue.setConsumer !== "function") {
-    return;
-  }
+  if (!("launchQueue" in window) || typeof window.launchQueue.setConsumer !== "function") return;
 
   window.launchQueue.setConsumer(async (launchParams) => {
-    if (!launchParams?.files?.length) {
-      return;
-    }
+    if (!launchParams?.files?.length) return;
 
     try {
       const openedFiles = [];
-
       for (const fileHandle of launchParams.files) {
-        if (!fileHandle || typeof fileHandle.getFile !== "function") {
-          continue;
-        }
+        if (!fileHandle || typeof fileHandle.getFile !== "function") continue;
         const file = await fileHandle.getFile();
-        if (isPdfFile(file)) {
-          openedFiles.push(file);
-        }
+        openedFiles.push(file);
       }
 
       if (openedFiles.length) {
+        if (!activeTool) showTool(tools[0]);
         acceptFiles(openedFiles);
         setSharedStatus(
-          `Imported ${openedFiles.length} PDF${openedFiles.length === 1 ? "" : "s"} from file open.`,
+          `Imported ${openedFiles.length} file${openedFiles.length === 1 ? "" : "s"} from file open.`,
         );
       } else {
-        setSharedStatus("No PDF file was provided from file open.", true);
+        setSharedStatus("No file was provided from file open.", true);
       }
     } catch (err) {
       setSharedStatus("Could not open file from the system handler.", true);
@@ -624,9 +404,7 @@ function registerFileLaunchConsumer() {
 }
 
 async function waitForServiceWorkerControl(timeoutMs = 5000) {
-  if (navigator.serviceWorker.controller) {
-    return;
-  }
+  if (navigator.serviceWorker.controller) return;
 
   await Promise.race([
     navigator.serviceWorker.ready,
@@ -645,12 +423,12 @@ async function importSharedFilesIfAny() {
   const sharedState = url.searchParams.get("shared");
   let importedCount = 0;
 
-  if (!sharedState) {
-    return;
-  }
+  if (!sharedState) return;
+
+  if (!activeTool) showTool(tools[0]);
 
   if (sharedState === "empty") {
-    setSharedStatus("Share target did not include a PDF file.", true);
+    setSharedStatus("Share target did not include a file.", true);
     clearSharedUrlParams();
     return;
   }
@@ -666,7 +444,7 @@ async function importSharedFilesIfAny() {
     const pendingResponse = await fetch("/shared-files/pending", { cache: "no-store" });
 
     if (pendingResponse.status === 204) {
-      setSharedStatus("No shared PDF is pending. Upload a file manually.");
+      setSharedStatus("No shared file is pending. Upload a file manually.");
       clearSharedUrlParams();
       return;
     }
@@ -680,10 +458,8 @@ async function importSharedFilesIfAny() {
 
     for (const meta of pending.files || []) {
       if (!meta?.url) continue;
-
       const fileResponse = await fetch(meta.url, { cache: "no-store" });
       if (!fileResponse.ok) continue;
-
       const blob = await fileResponse.blob();
       sharedFiles.push(
         new File([blob], meta.name || "statement.pdf", {
@@ -697,13 +473,12 @@ async function importSharedFilesIfAny() {
       acceptFiles(sharedFiles);
       importedCount = sharedFiles.length;
       setSharedStatus(
-        `Imported ${sharedFiles.length} PDF${sharedFiles.length === 1 ? "" : "s"} from share target.`,
+        `Imported ${sharedFiles.length} file${sharedFiles.length === 1 ? "" : "s"} from share target.`,
       );
     } else {
-      setSharedStatus("No valid PDF was found in shared data.", true);
+      setSharedStatus("No valid file was found in shared data.", true);
     }
 
-    // Cleanup should not flip the UI into an import-failure state.
     try {
       if (pending.id) {
         await fetch(`/shared-files/consume?id=${encodeURIComponent(pending.id)}`, {
@@ -717,7 +492,7 @@ async function importSharedFilesIfAny() {
     }
   } catch (err) {
     if (!importedCount) {
-      setSharedStatus("Could not import shared PDF. You can still upload manually.", true);
+      setSharedStatus("Could not import shared file. You can still upload manually.", true);
     }
     console.error("Shared import failed:", err);
   } finally {
@@ -725,10 +500,20 @@ async function importSharedFilesIfAny() {
   }
 }
 
+/* ── Init ── */
+
 registerServiceWorker();
 registerFileLaunchConsumer();
-setupPwaInstallPrompt();
 importSharedFilesIfAny();
+
+// Deep-link: if URL has a tool hash, open it directly
+const initialHash = window.location.hash.slice(1);
+if (initialHash) {
+  const tool = tools.find((t) => t.id === initialHash);
+  if (tool) showTool(tool);
+}
+
+/* ── Dropzone events ── */
 
 fileInput.addEventListener("change", (event) => {
   acceptFiles(event.target.files);

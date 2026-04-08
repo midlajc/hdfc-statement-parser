@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "HDFC Statement Parser",
-  "short_name": "HDFC Parser",
-  "description": "Parse HDFC credit card statement PDFs into CSV fully in your browser.",
+  "name": "Statement Tools",
+  "short_name": "Stmt Tools",
+  "description": "A collection of browser-based tools to parse bank and card statements into CSV.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

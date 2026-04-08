@@ -77,6 +77,99 @@ h1 {
   color: #b42318;
 }
 
+/* ── Home view ── */
+
+.home-view,
+.tool-view {
+  display: grid;
+  gap: 24px;
+}
+
+/* ── Tool grid ── */
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.tool-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 22px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  font-family: inherit;
+  color: inherit;
+  font-size: inherit;
+}
+
+.tool-card:hover {
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 3px var(--ring);
+  transform: translateY(-2px);
+}
+
+.tool-card:focus-visible {
+  outline: none;
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.tool-card-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tool-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-card-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.tool-card-description {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 2px;
+}
+
+.tool-card-arrow {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.tool-card:hover .tool-card-arrow {
+  transform: translateX(3px);
+}
+
+/* ── Tool nav ── */
+
+.tool-nav {
+  margin-bottom: -16px;
+}
+
+.back-btn {
+  font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Card ── */
+
 .card {
   background: var(--card);
   color: var(--card-foreground);
@@ -144,6 +237,8 @@ h1 {
   font-size: 0.9rem;
   color: var(--muted);
 }
+
+/* ── File tiles ── */
 
 .file-tile {
   border: 1px solid var(--border);
@@ -315,6 +410,8 @@ input[type="password"]:focus {
   padding: 10px 12px;
 }
 
+/* ── Buttons ── */
+
 .cta {
   background: var(--primary);
   border: none;
@@ -371,6 +468,8 @@ input[type="password"]:focus {
   color: var(--muted);
 }
 
+/* ── Responsive ── */
+
 @media (max-width: 720px) {
   .page {
     padding: 48px 18px 64px;
@@ -409,5 +508,9 @@ input[type="password"]:focus {
 
   .password-inline input[type="password"] {
     width: 100%;
+  }
+
+  .tool-grid {
+    grid-template-columns: 1fr;
   }
 }
