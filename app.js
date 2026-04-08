@@ -1,8 +1,9 @@
 import hdfcCreditCard from "./parsers/hdfc-credit-card.js";
+import hdfcBank from "./parsers/hdfc-bank.js";
 
 /* ── Tool registry ── */
 
-const tools = [hdfcCreditCard];
+const tools = [hdfcCreditCard, hdfcBank];
 
 let activeTool = null;
 
