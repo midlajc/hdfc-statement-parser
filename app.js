@@ -35,7 +35,8 @@ function showHome() {
   homeView.hidden = false;
   fileList.innerHTML = "";
   document.title = "Statement Tools";
-  window.history.pushState(null, "", window.location.pathname);
+  const base = window.location.pathname + window.location.search;
+  window.history.pushState(null, "", base);
 }
 
 function showTool(tool) {
@@ -54,7 +55,8 @@ function showTool(tool) {
   dropzoneSubtitle.textContent = "or click to choose files";
 
   document.title = `${tool.name} — Statement Tools`;
-  window.history.pushState(null, "", `#${tool.id}`);
+  const base = window.location.pathname + window.location.search;
+  window.history.pushState(null, "", `${base}#${tool.id}`);
 }
 
 backBtn.addEventListener("click", showHome);
