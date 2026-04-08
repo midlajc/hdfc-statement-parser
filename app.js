@@ -35,7 +35,7 @@ function showHome() {
   homeView.hidden = false;
   fileList.innerHTML = "";
   document.title = "Statement Tools";
-  window.history.pushState(null, "", "/");
+  window.history.pushState(null, "", window.location.pathname);
 }
 
 function showTool(tool) {
