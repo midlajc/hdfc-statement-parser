@@ -4,7 +4,7 @@ A collection of browser-based tools to parse bank and card statements into CSV.
 
 ## Open App
 
-- https://statements.midlajc.dev/
+- https://statement-parser.midlajc.dev/
 
 ## Available Tools
 
